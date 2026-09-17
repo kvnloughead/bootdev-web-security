@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -233,8 +234,26 @@ func parseForm(_ int64, renderer *templates.Renderer) middleware {
 }
 
 func (handler *authHandler) Logout(responseWriter http.ResponseWriter, request *http.Request) {
+
+	// Load and revoke the current session
+	currentSession, _, err := sessions.Current(request, handler.accounts)
+	if err != nil {
+		fmt.Print("Error: ", err.Error())
+		handler.internalError(responseWriter, request, err)
+		return
+	}
+
+	err = handler.accounts.RevokeSession(request.Context(), currentSession.Session.Token)
+	if err != nil {
+		fmt.Print("Error: ", err.Error())
+		handler.internalError(responseWriter, request, err)
+		return
+	}
+
+	// Clear challenge token and session cookie
 	challengeToken := totpLoginChallengeToken(request)
 	if err := handler.mfa.DeleteChallenge(request.Context(), challengeToken); err != nil {
+		fmt.Print("Error: ", err.Error())
 		handler.internalError(responseWriter, request, err)
 		return
 	}
@@ -242,6 +261,7 @@ func (handler *authHandler) Logout(responseWriter http.ResponseWriter, request *
 	if challengeToken != "" {
 		clearTOTPLoginChallengeCookie(responseWriter)
 	}
+
 	http.Redirect(responseWriter, request, "/", http.StatusFound)
 }
 
